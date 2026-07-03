@@ -1,0 +1,37 @@
+// KQL — Cross-process injection handle detection
+// Works against Microsoft Sentinel / Defender for Endpoint's DeviceEvents
+// (Sysmon-equivalent ProcessAccess events surface as ActionType == "OpenProcessApiCall")
+// or against a raw Sysmon Event ID 10 table if you're forwarding via
+// Sysmon-for-Linux/Winlogbeat into a custom table — adjust table/column
+// names to match your ingestion pipeline.
+
+let SuspiciousAccessMasks = dynamic(["0x1F0FFF", "0x1FFFFF", "0x1438", "0x143A"]);
+let Allowlist = dynamic(["vsjitdebugger.exe", "devenv.exe", "windbg.exe",
+                          "x64dbg.exe", "x32dbg.exe", "procexp.exe", "procexp64.exe"]);
+DeviceEvents
+| where ActionType == "OpenProcessApiCall"
+| extend GrantedAccessHex = tostring(AdditionalFields.GrantedAccess)
+| where GrantedAccessHex has_any (SuspiciousAccessMasks)
+| where InitiatingProcessFileName !in~ (Allowlist)
+| summarize Count = count(),
+            FirstSeen = min(Timestamp),
+            LastSeen = max(Timestamp)
+          by InitiatingProcessFileName, FileName, InitiatingProcessId, ProcessId
+| order by Count desc
+
+// Correlated variant: same source/target pair also spawned a remote thread
+// (CreateRemoteThread-equivalent, ActionType == "CreateRemoteThreadApiCall")
+// within a short window — a stronger, lower-noise signal than either event alone.
+let ProcessAccessEvents = DeviceEvents
+    | where ActionType == "OpenProcessApiCall"
+    | extend GrantedAccessHex = tostring(AdditionalFields.GrantedAccess)
+    | where GrantedAccessHex has_any (SuspiciousAccessMasks)
+    | project Timestamp, InitiatingProcessFileName, FileName, InitiatingProcessId, ProcessId;
+let RemoteThreadEvents = DeviceEvents
+    | where ActionType == "CreateRemoteThreadApiCall"
+    | project ThreadTime = Timestamp, InitiatingProcessFileName, FileName, InitiatingProcessId, ProcessId;
+ProcessAccessEvents
+| join kind=inner RemoteThreadEvents on InitiatingProcessFileName, FileName, InitiatingProcessId, ProcessId
+| where (ThreadTime - Timestamp) between (0min .. 10s)
+| where InitiatingProcessFileName !in~ (Allowlist)
+| project Timestamp, InitiatingProcessFileName, FileName, InitiatingProcessId, ProcessId, ThreadTime

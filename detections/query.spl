@@ -1,0 +1,28 @@
+``` Splunk SPL — Cross-process injection handle detection
+`` Assumes Sysmon logs are onboarded into index=sysmon (e.g. via the Splunk
+`` Add-on for Sysmon or a UF forwarding the Sysmon Operational channel).
+
+index=sysmon EventCode=10
+| rex field=GrantedAccess "(?<AccessHex>0x[0-9A-Fa-f]+)"
+| where match(AccessHex, "^0x(1F0FFF|1FFFFF|1438|143A)$")
+| eval SourceImage=lower(SourceImage), TargetImage=lower(TargetImage)
+| lookup allowlist_source_images.csv SourceImage OUTPUT is_allowed
+| where isnull(is_allowed)
+| stats count min(_time) as first_seen max(_time) as last_seen
+        values(GrantedAccess) as granted_access_values
+        by SourceImage, TargetImage, SourceProcessId, TargetProcessId
+| convert ctime(first_seen) ctime(last_seen)
+| sort - count
+
+``` Optional: raise severity when the same Source->Target pair also produced
+``` an Event ID 8 (CreateRemoteThread) within 10 seconds - this correlation is
+``` a much stronger signal than ProcessAccess alone.
+
+index=sysmon (EventCode=10 OR EventCode=8)
+| eval AccessHex=case(EventCode=10, GrantedAccess, EventCode=8, "n/a")
+| where EventCode=8 OR match(AccessHex, "^0x(1F0FFF|1FFFFF|1438|143A)$")
+| eval pair=SourceImage.":".TargetImage
+| transaction pair maxspan=10s
+| where eventcount>1
+| table _time, SourceImage, TargetImage, SourceProcessId, TargetProcessId, eventcount
+| sort - _time

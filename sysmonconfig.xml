@@ -1,0 +1,57 @@
+<Sysmon schemaversion="4.90">
+  <!--
+    Process Injection Detection Lab - Sysmon config
+    Scope: deliberately narrow. This is not a general-purpose Sysmon config
+    (see SwiftOnSecurity/olafhartong for those) - it only turns on the event
+    types this lab cares about, so the Operational log stays readable while
+    you learn what each field means.
+  -->
+  <EventFiltering>
+
+    <!-- Event ID 1: ProcessCreate — baseline: know what launched Notepad/debugger/etc, with hashes -->
+    <RuleGroup name="process-create" groupRelation="or">
+      <ProcessCreate onmatch="include">
+        <Image condition="end with">.exe</Image>
+      </ProcessCreate>
+    </RuleGroup>
+
+    <!-- Event ID 8: CreateRemoteThread — the classic injection tell (step 4 of the chain) -->
+    <RuleGroup name="remote-threads" groupRelation="or">
+      <CreateRemoteThread onmatch="include">
+        <!-- log all remote thread creation; tune later once you've baselined your VM -->
+        <SourceImage condition="contains any">.exe</SourceImage>
+      </CreateRemoteThread>
+    </RuleGroup>
+
+    <!-- Event ID 10: ProcessAccess — one process opening a handle to another (steps 1-3 of the chain) -->
+    <RuleGroup name="process-access" groupRelation="or">
+      <ProcessAccess onmatch="include">
+        <!--
+          GrantedAccess values worth alerting on:
+            0x1F0FFF = PROCESS_ALL_ACCESS
+            0x1FFFFF = PROCESS_ALL_ACCESS (newer OS builds report this mask)
+            0x1438   = VM_OPERATION (0x8) + VM_WRITE (0x20) + VM_READ (0x10) + CREATE_THREAD (0x2) + QUERY_INFORMATION (0x400)
+            0x143A   = same as above plus DUP_HANDLE (0x40)
+          These are the masks a classic OpenProcess -> VirtualAllocEx -> WriteProcessMemory ->
+          CreateRemoteThread chain needs. A narrower request (just VM_WRITE, no CREATE_THREAD)
+          can mean thread hijacking or APC injection instead - see rule-notes.md for why this
+          config alone won't catch that.
+        -->
+        <GrantedAccess condition="is">0x1F0FFF</GrantedAccess>
+        <GrantedAccess condition="is">0x1FFFFF</GrantedAccess>
+        <GrantedAccess condition="is">0x1438</GrantedAccess>
+        <GrantedAccess condition="is">0x143A</GrantedAccess>
+      </ProcessAccess>
+    </RuleGroup>
+
+    <!-- Event ID 7: ImageLoad — flags a process loading a DLL from an unusual path (classic DLL injection artifact) -->
+    <RuleGroup name="image-load" groupRelation="or">
+      <ImageLoad onmatch="exclude">
+        <ImageLoaded condition="begin with">C:\Windows\System32\</ImageLoaded>
+        <ImageLoaded condition="begin with">C:\Windows\SysWOW64\</ImageLoaded>
+        <Signed condition="is">true</Signed>
+      </ImageLoad>
+    </RuleGroup>
+
+  </EventFiltering>
+</Sysmon>
