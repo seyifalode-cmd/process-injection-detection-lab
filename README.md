@@ -1,5 +1,16 @@
 # Process Injection Detection Lab — A Defender's View of Windows Process Injection
 
+Oluwaseyi Michael Falode | Cybersecurity & Cloud Security Engineer | Toronto, ON
+
+![Sysmon](https://img.shields.io/badge/Sysmon-Event_IDs_1·7·8·10-0078D4?style=flat)
+![Sysinternals](https://img.shields.io/badge/Sysinternals-Process_Explorer_·_ProcMon-0078D4?style=flat)
+![MITRE ATT&CK](https://img.shields.io/badge/MITRE_ATT%26CK-T1055-E63F2B?style=flat)
+![Splunk](https://img.shields.io/badge/Splunk-SPL-000000?style=flat&logo=splunk&logoColor=white)
+![KQL](https://img.shields.io/badge/KQL-Sentinel_/_Defender-0078D4?style=flat)
+![Status](https://img.shields.io/badge/Status-VM_validation_pending-F2A900?style=flat)
+
+> **Status:** the write-up, Sysmon configuration and SPL/KQL detections are complete. The Windows VM run and screenshots are still pending — see the [deliverable checklist](#status--deliverable-checklist).
+
 A hands-on lab using standard Windows tooling (Sysinternals + Sysmon) to observe
 what process injection looks like from a defender's seat, and to write a
 detection for it. The goal isn't to build anything malicious — it's to
